@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- This meta tag is CRITICAL for making it work on mobile phones -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AWS Cloud Live Feed</title>
+    <!-- Tailwind CSS for Responsive Design -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Library to generate QR Code -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        /* Custom smooth scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; border-radius: 8px; }
+        ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 8px; }
+    </style>
+</head>
+<body class="bg-slate-900 text-white font-sans min-h-screen flex flex-col antialiased">
+
+    <!-- Responsive Header -->
+    <header class="bg-slate-800/80 backdrop-blur-md border-b border-slate-700 p-4 sm:p-6 shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="text-center sm:text-left">
+                <h1 class="text-2xl sm:text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-cyan-300">
+                    ☁️ Cloud Live Feed
+                </h1>
+                <p class="text-slate-400 text-xs sm:text-sm mt-1">Live from AWS EC2</p>
+            </div>
+            
+            <!-- Projector Mode Toggle (Only show on larger screens) -->
+            <div class="hidden sm:flex items-center bg-slate-900 px-4 py-2 rounded-full border border-slate-700">
+                <span class="text-xs text-slate-400 mr-3 uppercase tracking-wider">Projector Auto-Refresh</span>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="autoRefreshToggle" class="sr-only peer">
+                    <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content - Grid changes based on screen size -->
+    <!-- Mobile: 1 column | Tablet: 2 columns | Desktop: 3 columns -->
+    <main class="flex-grow max-w-7xl mx-auto w-full p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8 mt-2">
+        
+        <!-- Left Column: Form & QR Code -->
+        <div class="lg:col-span-1 flex flex-col gap-6">
+            
+            <!-- The Form Box -->
+            <div class="bg-slate-800/40 p-5 sm:p-6 rounded-2xl border border-slate-700 shadow-xl backdrop-blur-sm order-1 lg:order-none">
+                <h2 class="text-lg sm:text-xl font-bold mb-4 flex items-center text-blue-400">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                    Send a Message
+                </h2>
+                
+                {% if error %}
+                <div class="bg-red-500/20 border border-red-500 text-red-300 text-sm p-3 rounded-lg mb-4 text-center">
+                    {{ error }}
+                </div>
+                {% endif %}
+
+                <form method="POST" id="msgForm">
+                    {% csrf_token %}
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs text-slate-400 uppercase tracking-wider mb-1">Your Name</label>
+                            <input type="text" name="name" required placeholder="John Doe" 
+                                class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm sm:text-base">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 uppercase tracking-wider mb-1">Message</label>
+                            <textarea name="message" required placeholder="Hello from the crowd!" rows="2"
+                                class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors resize-none text-sm sm:text-base"></textarea>
+                        </div>
+                        <button type="submit" id="submitBtn" 
+                            class="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg transform transition active:scale-95 flex justify-center items-center text-sm sm:text-base">
+                            Broadcast to Cloud
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- QR Code Box -->
+            <!-- Hidden on mobile phones (hidden), visible on medium screens and up (md:flex) -->
+            <div class="bg-slate-800/40 p-6 rounded-2xl border border-slate-700 shadow-xl backdrop-blur-sm hidden md:flex flex-col items-center text-center order-2 lg:order-none">
+                <h3 class="text-sm text-slate-400 uppercase tracking-wider mb-4">Scan to Join Live</h3>
+                <div id="qrcode" class="p-4 bg-white rounded-xl shadow-inner"></div>
+                <p class="text-xs text-slate-500 mt-4 break-all px-2" id="displayUrl"></p>
+            </div>
+        </div>
+
+        <!-- Right Column: Live Message Feed -->
+        <div class="lg:col-span-2 order-3 lg:order-none">
+            <!-- Dynamic Height: 400px on phones, 600px on desktop -->
+            <div class="bg-slate-800/40 rounded-2xl border border-slate-700 shadow-xl backdrop-blur-sm h-[450px] lg:h-[700px] flex flex-col">
+                <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/80 rounded-t-2xl">
+                    <h2 class="font-bold text-lg">Live Feed</h2>
+                    <span class="flex items-center text-xs text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full border border-emerald-400/20">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span> Online
+                    </span>
+                </div>
+                
+                <!-- Scrollable Messages Area -->
+                <div class="p-4 sm:p-6 overflow-y-auto flex-grow space-y-3 sm:space-y-4" id="messageFeed">
+                    {% for msg in messages %}
+                    <div class="bg-slate-700/30 p-3 sm:p-4 rounded-xl border border-slate-600/50 hover:border-blue-500/50 transition-colors animate-fade-in">
+                        <div class="flex justify-between items-start mb-1 sm:mb-2">
+                            <span class="font-bold text-blue-300 text-sm sm:text-base">{{ msg.name }}</span>
+                            <span class="text-[10px] sm:text-xs text-slate-500">{{ msg.created_at|timesince }} ago</span>
+                        </div>
+                        <p class="text-slate-200 text-sm sm:text-base word-break break-words">{{ msg.content }}</p>
+                    </div>
+                    {% empty %}
+                    <div class="h-full flex flex-col items-center justify-center text-slate-500">
+                        <svg class="w-12 h-12 sm:w-16 sm:h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                        <p class="text-sm sm:text-base">No messages yet. Be the first!</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <style>
+        /* Smooth fade-in animation for new messages */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+    </style>
+
+    <!-- JavaScript logic -->
+    <script>
+        // 1. Generate QR Code dynamically
+        const currentUrl = window.location.href.split('?')[0]; // Get clean URL
+        document.getElementById('displayUrl').innerText = currentUrl;
+        
+        // Generate QR code only if the container is visible (saves memory on phones)
+        if (window.innerWidth >= 768) {
+            new QRCode(document.getElementById("qrcode"), {
+                text: currentUrl,
+                width: 180,
+                height: 180,
+                colorDark : "#0f172a",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+        }
+
+        // 2. 5-Second Cooldown Logic
+        const form = document.getElementById('msgForm');
+        const btn = document.getElementById('submitBtn');
+
+        const lastPostTime = localStorage.getItem('lastPostTime');
+        const checkCooldown = () => {
+            if (lastPostTime) {
+                const elapsed = (Date.now() - parseInt(lastPostTime)) / 1000;
+                if (elapsed < 5) {
+                    startCooldown(5 - elapsed);
+                }
+            }
+        };
+
+        const startCooldown = (secondsLeft) => {
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            
+            const interval = setInterval(() => {
+                secondsLeft -= 1;
+                btn.innerText = `Wait ${Math.ceil(secondsLeft)}s...`;
+                
+                if (secondsLeft <= 0) {
+                    clearInterval(interval);
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    btn.innerText = 'Broadcast to Cloud';
+                }
+            }, 1000);
+        };
+
+        form.addEventListener('submit', () => {
+            localStorage.setItem('lastPostTime', Date.now());
+            btn.innerText = 'Sending...';
+            btn.disabled = true;
+        });
+
+        checkCooldown();
+
+        // 3. Projector Auto-Refresh Logic (Only activates if toggle is checked)
+        const refreshToggle = document.getElementById('autoRefreshToggle');
+        let refreshInterval;
+
+        // Check if presenter previously turned it on
+        if(sessionStorage.getItem('autoRefresh') === 'true') {
+            refreshToggle.checked = true;
+            startAutoRefresh();
+        }
+
+        refreshToggle.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                sessionStorage.setItem('autoRefresh', 'true');
+                startAutoRefresh();
+            } else {
+                sessionStorage.setItem('autoRefresh', 'false');
+                clearInterval(refreshInterval);
+            }
+        });
+
+        function startAutoRefresh() {
+            refreshInterval = setInterval(() => {
+                // Reloads the page every 4 seconds to get new messages from Django
+                window.location.reload();
+            }, 4000);
+        }
+    </script>
+</body>
+</html>
